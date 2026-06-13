@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import multiprocessing
 import os
 import time
 import regex as re
@@ -8,55 +9,9 @@ from collections import defaultdict
 from itertools import pairwise
 from typing import Iterator, BinaryIO
 
+from cs336_basics.tokenizer import pretokenize
+
 logger = logging.getLogger(__name__)
-
-
-# from example code
-def find_chunk_boundaries(
-    file: BinaryIO,
-    desired_num_chunks: int,
-    split_special_token: bytes,
-) -> list[int]:
-    """
-    Chunk the file into parts that can be counted independently.
-    May return fewer chunks if the boundaries end up overlapping.
-    """
-    assert isinstance(split_special_token, bytes), "Must represent special token as a bytestring"
-
-    # Get total file size in bytes
-    file.seek(0, os.SEEK_END)
-    file_size = file.tell()
-    file.seek(0)
-
-    chunk_size = file_size // desired_num_chunks
-
-    # Initial guesses for chunk boundary locations, uniformly spaced
-    # Chunks start on previous index, don't include last index
-    chunk_boundaries = [i * chunk_size for i in range(desired_num_chunks + 1)]
-    chunk_boundaries[-1] = file_size
-
-    mini_chunk_size = 4096  # Read ahead by 4k bytes at a time
-
-    for bi in range(1, len(chunk_boundaries) - 1):
-        initial_position = chunk_boundaries[bi]
-        file.seek(initial_position)  # Start at boundary guess
-        while True:
-            mini_chunk = file.read(mini_chunk_size)  # Read a mini chunk
-
-            # If EOF, this boundary should be at the end of the file
-            if mini_chunk == b"":
-                chunk_boundaries[bi] = file_size
-                break
-
-            # Find the special token in the mini chunk
-            found_at = mini_chunk.find(split_special_token)
-            if found_at != -1:
-                chunk_boundaries[bi] = initial_position + found_at
-                break
-            initial_position += mini_chunk_size
-
-    # Make sure all boundaries are unique, but might be fewer than desired_num_chunks
-    return sorted(set(chunk_boundaries))
 
 
 def train_bpe(
@@ -69,29 +24,15 @@ def train_bpe(
     t0 = time.perf_counter()
 
     merges = []
-    # pre-tokenize
-    pretoken_counts: dict[str, int] = defaultdict(int)
-    with open(input_path, "rb") as f:
-        num_processes = 4
-        boundaries = find_chunk_boundaries(f, num_processes, b"<|endoftext|>")
-
-        # The following is a serial implementation, but you can parallelize this
-        # by sending each start/end pair to a set of processes.
-        for start, end in zip(boundaries[:-1], boundaries[1:]):
-            f.seek(start)
-            chunk = f.read(end - start).decode("utf-8", errors="ignore")
-            # Run pre-tokenization on your chunk and store the counts for each pre-token
-            PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
-            for pretoken in re.finditer(PAT, chunk):
-                pretoken_counts[pretoken.group()] += 1
+    pretoken_counts = pretokenize(input_path, special_tokens)
 
     t_pretokenize = time.perf_counter()
     log(f"[timing] pre-tokenize: {t_pretokenize - t0:.3f}s  ({len(pretoken_counts)} unique pretokens)")
 
     # initial tokenize
-    # vocab = token_to_pretokens.keys()
     pretoken_to_tokens: dict[str, list[bytes]] = {}
     token_to_pretokens: dict[bytes, set[str]] = defaultdict(set)
+    # TODO: initialize with special tokens + 256 bytes
     for pretoken in pretoken_counts.keys():
         tokens_list = [bytes([t]) for t in bytes(pretoken, "utf-8")]
         pretoken_to_tokens[pretoken] = tokens_list
@@ -125,10 +66,6 @@ def train_bpe(
         # actually execute the merge
         t_merge_start = time.perf_counter()
         merge_pretokens = (token_to_pretokens[merge_pair[0]], token_to_pretokens[merge_pair[1]])
-        # remove all merge pretokens. we will re-add them manually during the merge
-        token_to_pretokens.pop(merge_pair[0])
-        if merge_pair[1] in token_to_pretokens:
-            token_to_pretokens.pop(merge_pair[1])
         # temp variable to help with timing
         old_pretoken_to_tokens: dict[str, list[bytes]] = {}
         # only consider pretokens containing either merged token
@@ -184,15 +121,3 @@ def train_bpe(
     }
     log(f"[timing] total: {time.perf_counter() - t0:.3f}s")
     return vocab, merges
-
-
-# temporary test code
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
-    vocab, merges = train_bpe(
-        input_path="/Users/jeremyzhou/repos/claude-projects/cs336/assignment1-basics/data/TinyStoriesV2-GPT4-valid.txt",
-        vocab_size=500,
-        special_tokens=["<|endoftext|>"],
-        verbose=True,
-    )
-    print(vocab)

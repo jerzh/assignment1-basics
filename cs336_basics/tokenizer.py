@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import logging
+import multiprocessing
 import os
 import time
 import regex as re
-from collections import defaultdict
+from collections import defaultdict, Counter
 from itertools import pairwise
 from typing import Iterator, BinaryIO
 
@@ -15,13 +16,13 @@ logger = logging.getLogger(__name__)
 def find_chunk_boundaries(
     file: BinaryIO,
     desired_num_chunks: int,
-    split_special_token: bytes,
+    split_special_tokens: list[bytes],
 ) -> list[int]:
     """
     Chunk the file into parts that can be counted independently.
     May return fewer chunks if the boundaries end up overlapping.
     """
-    assert isinstance(split_special_token, bytes), "Must represent special token as a bytestring"
+    assert all(isinstance(t, bytes) for t in split_special_tokens), "Must represent special token as a bytestring"
 
     # Get total file size in bytes
     file.seek(0, os.SEEK_END)
@@ -49,7 +50,7 @@ def find_chunk_boundaries(
                 break
 
             # Find the special token in the mini chunk
-            found_at = mini_chunk.find(split_special_token)
+            found_at = min(mini_chunk.find(t) for t in split_special_tokens)
             if found_at != -1:
                 chunk_boundaries[bi] = initial_position + found_at
                 break
@@ -57,6 +58,36 @@ def find_chunk_boundaries(
 
     # Make sure all boundaries are unique, but might be fewer than desired_num_chunks
     return sorted(set(chunk_boundaries))
+
+
+def count_pretokens(chunk):
+    _pretoken_counts: dict[str, int] = defaultdict(int)
+    # Run pre-tokenization on your chunk and store the counts for each pre-token
+    PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+    for pretoken in re.finditer(PAT, chunk):
+        _pretoken_counts[pretoken.group()] += 1
+    return _pretoken_counts
+
+
+def pretokenize(input_path, special_tokens: list[str]):
+    special_tokens_bytes = [bytes(t, "utf-8") for t in special_tokens]
+
+    # pre-tokenize
+    with open(input_path, "rb") as f:
+        num_processes = 4
+        boundaries = find_chunk_boundaries(f, num_processes, special_tokens_bytes)
+
+        chunks = []
+        for start, end in zip(boundaries[:-1], boundaries[1:]):
+            f.seek(start)
+            chunk = f.read(end - start).decode("utf-8", errors="ignore")
+            PAT = "|".join(re.escape(d) for d in special_tokens)
+            chunks.extend(re.split(PAT, chunk))
+
+        with multiprocessing.Pool() as pool:
+            pretoken_counts_list = pool.map(count_pretokens, chunks)
+            pretoken_counts = sum((Counter(p) for p in pretoken_counts_list), start=Counter())
+    return pretoken_counts
 
 
 def train_bpe(
@@ -69,32 +100,18 @@ def train_bpe(
     t0 = time.perf_counter()
 
     merges = []
-    # pre-tokenize
-    pretoken_counts: dict[str, int] = defaultdict(int)
-    with open(input_path, "rb") as f:
-        num_processes = 4
-        boundaries = find_chunk_boundaries(f, num_processes, b"<|endoftext|>")
-
-        # The following is a serial implementation, but you can parallelize this
-        # by sending each start/end pair to a set of processes.
-        for start, end in zip(boundaries[:-1], boundaries[1:]):
-            f.seek(start)
-            chunk = f.read(end - start).decode("utf-8", errors="ignore")
-            # Run pre-tokenization on your chunk and store the counts for each pre-token
-            PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
-            for pretoken in re.finditer(PAT, chunk):
-                pretoken_counts[pretoken.group()] += 1
+    pretoken_counts = pretokenize(input_path, special_tokens)
 
     t_pretokenize = time.perf_counter()
     log(f"[timing] pre-tokenize: {t_pretokenize - t0:.3f}s  ({len(pretoken_counts)} unique pretokens)")
 
     # initial tokenize
-    vocab = set()
+    special_tokens_bytes = [bytes(t, "utf-8") for t in special_tokens]
+    vocab = set(special_tokens_bytes + [bytes([i]) for i in range(256)])
     pretoken_to_tokens: dict[str, list[bytes]] = {}
     for pretoken in pretoken_counts.keys():
         tokens_list = [bytes([t]) for t in bytes(pretoken, "utf-8")]
         pretoken_to_tokens[pretoken] = tokens_list
-        vocab |= set(tokens_list)
 
     t_init = time.perf_counter()
     log(f"[timing] initial tokenize: {t_init - t_pretokenize:.3f}s  (initial vocab size {len(vocab)})")
@@ -114,15 +131,15 @@ def train_bpe(
                 token_pair_counts[token_pair] += pretoken_count
 
         # merge highest count, break ties lexicographically
-        merge_pair, _ = max(token_pair_counts.items(), key=lambda p: (-p[1], p[0]))
+        merge_pair, _ = max(token_pair_counts.items(), key=lambda p: (p[1], p[0]))
         t_count_total += time.perf_counter() - t_count_start
 
         merges.append(merge_pair)
         new_token = merge_pair[0] + merge_pair[1]
+        vocab.add(new_token)
 
         # actually execute the merge
         t_merge_start = time.perf_counter()
-        vocab = set()
         for pretoken, tokens_list in pretoken_to_tokens.items():
             i = 0
             while i < len(tokens_list):
@@ -130,7 +147,6 @@ def train_bpe(
                     tokens_list[i] = new_token
                     tokens_list.pop(i+1)
                 i += 1
-            vocab |= set(tokens_list)
         t_merge_total += time.perf_counter() - t_merge_start
 
         iter_count += 1
@@ -154,9 +170,9 @@ def train_bpe(
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     vocab, merges = train_bpe(
-        input_path="/Users/jeremyzhou/repos/claude-projects/cs336/assignment1-basics/data/TinyStoriesV2-GPT4-valid.txt",
+        input_path="tests/fixtures/corpus.en",
         vocab_size=500,
         special_tokens=["<|endoftext|>"],
         verbose=True,
     )
-    print(vocab)
+    print("\n".join(str(p) for p in merges))
