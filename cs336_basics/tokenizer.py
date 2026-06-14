@@ -51,7 +51,10 @@ def find_chunk_boundaries(
                 break
 
             # Find the special token in the mini chunk
-            found_at = min(mini_chunk.find(t) for t in split_special_tokens)
+            found_at = min(
+                (idx for t in split_special_tokens if (idx := mini_chunk.find(t)) != -1),
+                default=-1
+            )
             if found_at != -1:
                 chunk_boundaries[bi] = initial_position + found_at
                 break
@@ -68,7 +71,7 @@ def count_pretokens(start, end, input_path, special_tokens):
         PAT = "|".join(re.escape(d) for d in special_tokens)
         chunks = re.split(PAT, chunk)
 
-    _pretoken_counts: dict[str, int] = defaultdict(int)
+    _pretoken_counts: Counter[str] = Counter()
     for chunk in chunks:
         # Run pre-tokenization on your chunk and store the counts for each pre-token
         PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
@@ -92,20 +95,33 @@ def pretokenize(input_path, special_tokens: list[str]):
     return pretoken_counts
 
 
+def apply_merge(tokens_list, merge_pair):
+    new_token = merge_pair[0] + merge_pair[1]
+    new_tokens_list = []
+    i = 0
+    while i < len(tokens_list):
+        if i < len(tokens_list) - 1 and (tokens_list[i], tokens_list[i+1]) == merge_pair:
+            new_tokens_list.append(new_token)
+            i += 1
+        else:
+            new_tokens_list.append(tokens_list[i])
+        i += 1
+    return new_tokens_list
+
+
 def train_bpe(
     input_path: str | os.PathLike,
     vocab_size: int,
     special_tokens: list[str],
     verbose: bool = False,
 ) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
-    log = logger.info if verbose else (lambda *a, **kw: None)
     t0 = time.perf_counter()
 
     merges = []
     pretoken_counts = pretokenize(input_path, special_tokens)
 
     t_pretokenize = time.perf_counter()
-    log(f"[timing] pre-tokenize: {t_pretokenize - t0:.3f}s  ({len(pretoken_counts)} unique pretokens)")
+    logger.info(f"[timing] pre-tokenize: {t_pretokenize - t0:.3f}s  ({len(pretoken_counts)} unique pretokens)")
 
     # initial tokenize
     special_tokens_bytes = [bytes(t, "utf-8") for t in special_tokens]
@@ -116,7 +132,7 @@ def train_bpe(
         pretoken_to_tokens[pretoken] = tokens_list
 
     t_init = time.perf_counter()
-    log(f"[timing] initial tokenize: {t_init - t_pretokenize:.3f}s  (initial vocab size {len(vocab)})")
+    logger.info(f"[timing] initial tokenize: {t_init - t_pretokenize:.3f}s  (initial vocab size {len(vocab)})")
 
     # big loop, keep repeating until we hit desired vocab size
     t_loop_start = time.perf_counter()
@@ -127,7 +143,7 @@ def train_bpe(
     while len(vocab) < vocab_size:
         # count pairs
         t_count_start = time.perf_counter()
-        token_pair_counts: dict[tuple[bytes, bytes], int] = defaultdict(int)
+        token_pair_counts: Counter[tuple[bytes, bytes]] = Counter()
         for pretoken, pretoken_count in pretoken_counts.items():
             for token_pair in pairwise(pretoken_to_tokens[pretoken]):
                 token_pair_counts[token_pair] += pretoken_count
@@ -143,26 +159,106 @@ def train_bpe(
         # actually execute the merge
         t_merge_start = time.perf_counter()
         for pretoken, tokens_list in pretoken_to_tokens.items():
-            i = 0
-            while i < len(tokens_list):
-                if i < len(tokens_list) - 1 and (tokens_list[i], tokens_list[i+1]) == merge_pair:
-                    tokens_list[i] = new_token
-                    tokens_list.pop(i+1)
-                i += 1
+            pretoken_to_tokens[pretoken] = apply_merge(tokens_list, merge_pair)
         t_merge_total += time.perf_counter() - t_merge_start
 
         iter_count += 1
         if iter_count % 50 == 0:
             elapsed = time.perf_counter() - t_loop_start
-            log(f"[timing] iter {iter_count:4d}  vocab={len(vocab)}  "
+            logger.info(f"[timing] iter {iter_count:4d}  vocab={len(vocab)}  "
                 f"elapsed={elapsed:.1f}s  count={t_count_total:.2f}s  merge={t_merge_total:.2f}s")
 
     t_loop_end = time.perf_counter()
-    log(f"[timing] merge loop total: {t_loop_end - t_loop_start:.3f}s over {iter_count} iters  "
+    logger.info(f"[timing] merge loop total: {t_loop_end - t_loop_start:.3f}s over {iter_count} iters  "
         f"(count={t_count_total:.2f}s  merge={t_merge_total:.2f}s)")
 
     vocab = {
         i: val for i, val in enumerate(sorted(vocab))
     }
-    log(f"[timing] total: {time.perf_counter() - t0:.3f}s")
+    logger.info(f"[timing] total: {time.perf_counter() - t0:.3f}s")
     return vocab, merges
+
+
+class Tokenizer:
+    def __init__(
+        self,
+        vocab: dict[int, bytes],
+        merges: list[tuple[bytes, bytes]],
+        special_tokens: list[str] | None = None,
+    ) -> None:
+        for special_token in special_tokens or []:
+            if special_token not in vocab:
+                vocab[len(vocab)] = special_token
+        self.vocab: dict[int, bytes] = vocab
+        self.inverse_vocab: dict[bytes, int] = {v: k for k, v in vocab.items()}
+        self.merges: list[tuple[bytes, bytes]] = merges
+        self.inverse_merges: dict[tuple[bytes, bytes], int] = {v: k for k, v in enumerate(self.merges)}
+        self.special_tokens: list[str] = special_tokens or []
+        self.pretoken_encodings: dict[str, list[int]] = defaultdict(list)
+
+    @classmethod
+    def from_files(
+        cls,
+        vocab_filepath: str | os.PathLike,
+        merges_filepath: str | os.PathLike,
+        special_tokens: list[str] | None = None,
+    ) -> Tokenizer:
+        with open(vocab_filepath, "rb") as f:
+            vocab = pickle.load(f)
+        with open(merges_filepath, "rb") as f:
+            merges = pickle.load(f)
+        return Tokenizer(vocab, merges, special_tokens)
+
+    def encode(self, text: str) -> list[int]:
+        return list(self.encode_iterable(iter([text])))
+
+    def next_chunk(self, iterable: Iterator[str]):
+        # Read until hit special token or EOF
+        chunk = ""
+        for minichunk in iterable:
+            while minichunk:
+                # Find the special token in the mini chunk
+                found_at, _, split_token = min(
+                    ((idx, -len(t), t) for t in self.special_tokens if (idx := minichunk.find(t)) != -1),
+                    default=(-1, 0, None),
+                )
+                if found_at != -1:
+                    yield chunk + minichunk[:found_at]
+                    yield split_token
+                    chunk = ""
+                    minichunk = minichunk[found_at + len(split_token):]
+                else:
+                    chunk += minichunk
+                    minichunk = ""
+        if chunk:
+            yield chunk
+
+    def encode_iterable(self, iterable: Iterator[str]) -> Iterator[int]:
+        for chunk in self.next_chunk(iterable):
+            if chunk in self.special_tokens:
+                yield self.inverse_vocab[bytes(chunk, "utf-8")]
+                continue
+            # Run pre-tokenization on your chunk and store the counts for each pre-token
+            PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+            for match in re.finditer(PAT, chunk):
+                pretoken = match.group()
+                if pretoken in self.pretoken_encodings:
+                    yield from self.pretoken_encodings[pretoken]
+                    continue
+                tokens_list = [bytes([t]) for t in bytes(pretoken, "utf-8")]
+                # Apply merges
+                while True:
+                    merge_pair = min(
+                        (pair for pair in pairwise(tokens_list) if pair in self.inverse_merges),
+                        key=lambda pair: self.inverse_merges[pair],
+                        default=None
+                    )
+                    if not merge_pair:
+                        break
+                    tokens_list = apply_merge(tokens_list, merge_pair)
+                encoding = [self.inverse_vocab[token] for token in tokens_list]
+                yield from encoding
+                self.pretoken_encodings[pretoken] = encoding
+
+    def decode(self, ids: list[int]) -> str:
+        return b"".join(self.vocab[token] for token in ids).decode("utf-8", errors="replace")
