@@ -234,17 +234,33 @@ class Tokenizer:
             yield chunk
 
     def encode_iterable(self, iterable: Iterator[str]) -> Iterator[int]:
+        t_start = time.perf_counter()
+        t_last_log = t_start
+        bytes_seen = 0
+        tokens_emitted = 0
+        chunks_seen = 0
+        cache_hits = 0
+        cache_misses = 0
+        LOG_EVERY = 5.0  # seconds
+
         for chunk in self.next_chunk(iterable):
+            chunks_seen += 1
+            bytes_seen += len(chunk.encode("utf-8"))
             if chunk in self.special_tokens:
                 yield self.inverse_vocab[bytes(chunk, "utf-8")]
+                tokens_emitted += 1
                 continue
             # Run pre-tokenization on your chunk and store the counts for each pre-token
             PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
             for match in re.finditer(PAT, chunk):
                 pretoken = match.group()
                 if pretoken in self.pretoken_encodings:
-                    yield from self.pretoken_encodings[pretoken]
+                    cache_hits += 1
+                    cached = self.pretoken_encodings[pretoken]
+                    yield from cached
+                    tokens_emitted += len(cached)
                     continue
+                cache_misses += 1
                 tokens_list = [bytes([t]) for t in bytes(pretoken, "utf-8")]
                 # Apply merges
                 while True:
@@ -258,7 +274,32 @@ class Tokenizer:
                     tokens_list = apply_merge(tokens_list, merge_pair)
                 encoding = [self.inverse_vocab[token] for token in tokens_list]
                 yield from encoding
+                tokens_emitted += len(encoding)
                 self.pretoken_encodings[pretoken] = encoding
+
+            now = time.perf_counter()
+            if now - t_last_log >= LOG_EVERY:
+                elapsed = now - t_start
+                mb = bytes_seen / (1 << 20)
+                rate_mb = mb / elapsed if elapsed else 0.0
+                rate_tok = tokens_emitted / elapsed if elapsed else 0.0
+                total_lookups = cache_hits + cache_misses
+                hit_rate = cache_hits / total_lookups if total_lookups else 0.0
+                logger.info(
+                    f"[encode] elapsed={elapsed:6.1f}s  "
+                    f"bytes={mb:8.2f}MB ({rate_mb:6.2f}MB/s)  "
+                    f"tokens={tokens_emitted:>10d} ({rate_tok:8.0f}/s)  "
+                    f"cache_hit={hit_rate:.3f}  cache_size={len(self.pretoken_encodings)}"
+                )
+                t_last_log = now
+
+        elapsed = time.perf_counter() - t_start
+        mb = bytes_seen / (1 << 20)
+        rate_mb = mb / elapsed if elapsed else 0.0
+        logger.info(
+            f"[encode] DONE  elapsed={elapsed:.1f}s  "
+            f"bytes={mb:.2f}MB ({rate_mb:.2f}MB/s)  tokens={tokens_emitted}"
+        )
 
     def decode(self, ids: list[int]) -> str:
         return b"".join(self.vocab[token] for token in ids).decode("utf-8", errors="replace")
