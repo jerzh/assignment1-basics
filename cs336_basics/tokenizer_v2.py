@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import multiprocessing
 import os
+import pickle
 import time
 import regex as re
 from collections import defaultdict
@@ -29,10 +30,14 @@ def train_bpe(
     t_pretokenize = time.perf_counter()
     log(f"[timing] pre-tokenize: {t_pretokenize - t0:.3f}s  ({len(pretoken_counts)} unique pretokens)")
 
-    # initial tokenize
     pretoken_to_tokens: dict[str, list[bytes]] = {}
     token_to_pretokens: dict[bytes, set[str]] = defaultdict(set)
-    # TODO: initialize with special tokens + 256 bytes
+    # set initial vocab
+    special_tokens_bytes = [bytes(t, "utf-8") for t in special_tokens]
+    initial_vocab = set(special_tokens_bytes + [bytes([i]) for i in range(256)])
+    for token in initial_vocab:
+        token_to_pretokens[token] = set()
+    # initial tokenize
     for pretoken in pretoken_counts.keys():
         tokens_list = [bytes([t]) for t in bytes(pretoken, "utf-8")]
         pretoken_to_tokens[pretoken] = tokens_list
@@ -57,7 +62,7 @@ def train_bpe(
     while len(token_to_pretokens) < vocab_size:
         # merge highest count, break ties lexicographically
         t_count_start = time.perf_counter()
-        merge_pair, _ = max(token_pair_counts.items(), key=lambda p: (-p[1], p[0]))
+        merge_pair, _ = max(token_pair_counts.items(), key=lambda p: (p[1], p[0]))
         t_count_total += time.perf_counter() - t_count_start
 
         merges.append(merge_pair)
@@ -121,3 +126,19 @@ def train_bpe(
     }
     log(f"[timing] total: {time.perf_counter() - t0:.3f}s")
     return vocab, merges
+
+
+# temporary test code
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    vocab, merges = train_bpe(
+        input_path="data/TinyStoriesV2-GPT4-train.txt",
+        vocab_size=10000,
+        special_tokens=["<|endoftext|>"],
+        verbose=True,
+    )
+
+    with open("data/tokenizer_vocab.pkl", "wb") as f:
+        pickle.dump(vocab, f)
+    with open("data/tokenizer_merges.pkl", "wb") as f:
+        pickle.dump(merges, f)

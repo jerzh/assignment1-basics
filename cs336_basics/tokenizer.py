@@ -3,10 +3,11 @@ from __future__ import annotations
 import logging
 import multiprocessing
 import os
+import pickle
 import time
 import regex as re
 from collections import defaultdict, Counter
-from itertools import pairwise
+from itertools import pairwise, repeat
 from typing import Iterator, BinaryIO
 
 logger = logging.getLogger(__name__)
@@ -60,33 +61,34 @@ def find_chunk_boundaries(
     return sorted(set(chunk_boundaries))
 
 
-def count_pretokens(chunk):
+def count_pretokens(start, end, input_path, special_tokens):
+    with open(input_path, "rb") as f:
+        f.seek(start)
+        chunk = f.read(end - start).decode("utf-8", errors="ignore")
+        PAT = "|".join(re.escape(d) for d in special_tokens)
+        chunks = re.split(PAT, chunk)
+
     _pretoken_counts: dict[str, int] = defaultdict(int)
-    # Run pre-tokenization on your chunk and store the counts for each pre-token
-    PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
-    for pretoken in re.finditer(PAT, chunk):
-        _pretoken_counts[pretoken.group()] += 1
+    for chunk in chunks:
+        # Run pre-tokenization on your chunk and store the counts for each pre-token
+        PAT = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+        for pretoken in re.finditer(PAT, chunk):
+            _pretoken_counts[pretoken.group()] += 1
     return _pretoken_counts
 
 
 def pretokenize(input_path, special_tokens: list[str]):
     special_tokens_bytes = [bytes(t, "utf-8") for t in special_tokens]
 
-    # pre-tokenize
     with open(input_path, "rb") as f:
-        num_processes = 4
+        num_processes = 8
         boundaries = find_chunk_boundaries(f, num_processes, special_tokens_bytes)
 
-        chunks = []
-        for start, end in zip(boundaries[:-1], boundaries[1:]):
-            f.seek(start)
-            chunk = f.read(end - start).decode("utf-8", errors="ignore")
-            PAT = "|".join(re.escape(d) for d in special_tokens)
-            chunks.extend(re.split(PAT, chunk))
-
-        with multiprocessing.Pool() as pool:
-            pretoken_counts_list = pool.map(count_pretokens, chunks)
-            pretoken_counts = sum((Counter(p) for p in pretoken_counts_list), start=Counter())
+    with multiprocessing.Pool() as pool:
+        pretoken_counts_list = pool.starmap(count_pretokens, zip(
+            boundaries[:-1], boundaries[1:], repeat(input_path), repeat(special_tokens),
+        ))
+        pretoken_counts = sum((Counter(p) for p in pretoken_counts_list), start=Counter())
     return pretoken_counts
 
 
@@ -164,15 +166,3 @@ def train_bpe(
     }
     log(f"[timing] total: {time.perf_counter() - t0:.3f}s")
     return vocab, merges
-
-
-# temporary test code
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
-    vocab, merges = train_bpe(
-        input_path="tests/fixtures/corpus.en",
-        vocab_size=500,
-        special_tokens=["<|endoftext|>"],
-        verbose=True,
-    )
-    print("\n".join(str(p) for p in merges))
