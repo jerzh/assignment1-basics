@@ -1,3 +1,4 @@
+import argparse
 import array
 import pickle
 import logging
@@ -20,7 +21,7 @@ def train_tokenizer(in_path, vocab_size, vocab_path, merges_path):
         pickle.dump(merges, f)
 
 
-def sample_10(in_path, tokenizer):
+def sample_10(tokenizer, in_path):
     # Sample 10 documents (delimited by <|endoftext|>)
     SEP = "<|endoftext|>"
     n_docs = 10
@@ -66,20 +67,31 @@ def tokenize(tokenizer: Tokenizer, in_path, out_path):
 
 
 if __name__ == "__main__":
-    train_path = "data/owt_train.txt"
-    valid_path = "data/owt_valid.txt"
-    vocab_size = 32000
-    out_path = "data/owt_encoded_train.bin"
-    vocab_path = "data/owt_tokenizer_vocab.pkl"
-    merges_path = "data/owt_tokenizer_merges.pkl"
+    p = argparse.ArgumentParser()
+
+    # ---- data ----
+    p.add_argument("--dataset-name", type=str, required=True)
+    p.add_argument("--in-path", type=str, required=True)
+    p.add_argument("--out-path", type=str, default="")
+    p.add_argument("--vocab-size", type=int, default=10_000)
+    p.add_argument("--mode", choices=["train", "sample", "tokenize"], default="sample")
+    p.add_subparsers()
+    args = p.parse_args()
+
+    vocab_path = f"data/{args.dataset_name}_tokenizer_vocab.pkl"
+    merges_path = f"data/{args.dataset_name}_tokenizer_merges.pkl"
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
-    train_tokenizer(train_path, vocab_size, vocab_path, merges_path)
 
-    # tokenizer = Tokenizer.from_files(
-    #     vocab_filepath=vocab_path,
-    #     merges_filepath=merges_path,
-    #     special_tokens=["<|endoftext|>"],
-    # )
-    # sample_10(train_path, tokenizer)
-    # tokenize(valid_path, out_path, vocab_path, merges_path)
+    if args.mode == "train":
+        train_tokenizer(args.in_path, args.vocab_size, vocab_path, merges_path)
+    else:
+        tokenizer = Tokenizer.from_files(
+            vocab_filepath=vocab_path,
+            merges_filepath=merges_path,
+            special_tokens=["<|endoftext|>"],
+        )
+        if args.mode == "sample":
+            sample_10(tokenizer, args.in_path)
+        elif args.mode == "tokenize":
+            tokenize(tokenizer, args.in_path, args.out_path)
