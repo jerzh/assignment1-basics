@@ -27,8 +27,8 @@ def get_batch(
         size=(batch_size, 1),
         device=device,
     )
-    inputs = x_[start_indices + torch.arange(0, context_length)]
-    targets = x_[start_indices + 1 + torch.arange(0, context_length)]
+    inputs = x_[start_indices + torch.arange(0, context_length, device=device)]
+    targets = x_[start_indices + 1 + torch.arange(0, context_length, device=device)]
     return (inputs, targets)
 
 
