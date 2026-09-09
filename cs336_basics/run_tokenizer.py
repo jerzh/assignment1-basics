@@ -75,7 +75,6 @@ if __name__ == "__main__":
     p.add_argument("--out-path", type=str, default="")
     p.add_argument("--vocab-size", type=int, default=10_000)
     p.add_argument("--mode", choices=["train", "sample", "tokenize"], default="sample")
-    p.add_subparsers()
     args = p.parse_args()
 
     vocab_path = f"data/{args.dataset_name}_tokenizer_vocab.pkl"
