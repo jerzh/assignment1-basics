@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import time
 from pathlib import Path
 
 import numpy as np
@@ -80,6 +81,9 @@ if __name__ == "__main__":
     torch.manual_seed(args.seed)
     if args.wandb_project is not None:
         wandb.init(project=args.wandb_project, name=args.run_name, config=vars(args))
+        run_name = wandb.run.name
+    elif args.run_name is None:
+        run_name = f"{time.strftime('%Y%m%d-%H%M%S')}"
 
     train_dataset = np.memmap(args.train_data, dtype=np.uint16, mode="r")
     val_dataset = np.memmap(args.val_data, dtype=np.uint16, mode="r")
@@ -137,9 +141,8 @@ if __name__ == "__main__":
             model.train()
 
         if i % args.checkpoint_interval == 0:
-            if not os.path.exists(args.checkpoint_dir):
-                os.mkdir(args.checkpoint_dir)
-            save_checkpoint(model, optimizer, i, Path(args.checkpoint_dir) / f"{args.run_name}_iter{i}")
+            os.makedirs(args.checkpoint_dir, exist_ok=True)
+            save_checkpoint(model, optimizer, i, Path(args.checkpoint_dir) / f"{run_name}_iter{i}")
 
     if args.wandb_project is not None:
         wandb.finish()

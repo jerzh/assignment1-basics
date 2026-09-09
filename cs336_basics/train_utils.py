@@ -21,15 +21,13 @@ def get_batch(
     and return (inputs, targets), each of shape (batch_size, context_length),
     on the requested `device`. `targets[b, i] = x[start_b + i + 1]`.
     """
-    x_ = torch.from_numpy(x).to(device)
-    start_indices = torch.randint(
-        high=len(x) - context_length,
-        size=(batch_size, 1),
-        device=device,
+    start_indices = np.random.randint(len(x) - context_length, size=(batch_size, 1))
+    inputs = x[start_indices + np.arange(0, context_length)]
+    targets = x[start_indices + 1 + np.arange(0, context_length)]
+    return (
+        torch.tensor(inputs.astype(np.int64), device=device),
+        torch.tensor(targets.astype(np.int64), device=device),
     )
-    inputs = x_[start_indices + torch.arange(0, context_length, device=device)]
-    targets = x_[start_indices + 1 + torch.arange(0, context_length, device=device)]
-    return (inputs, targets)
 
 
 # 5.2 Checkpointing
@@ -52,7 +50,7 @@ def load_checkpoint(
     model: nn.Module,
     optimizer: torch.optim.Optimizer,
 ) -> int:
-    obj = torch.load(src)
+    obj = torch.load(src, weights_only=False)
     model.load_state_dict(obj["model"])
     optimizer.load_state_dict(obj["optim"])
     return obj["iter"]
