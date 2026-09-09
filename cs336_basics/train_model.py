@@ -47,7 +47,7 @@ def parse_args() -> argparse.Namespace:
                    help="Iteration at which LR reaches lr_min; typically = total training iters.")
 
     # ---- training loop ----
-    p.add_argument("--batch-size", type=int, default=64)
+    p.add_argument("--batch-size", type=int, default=32)
     p.add_argument("--total-iters", type=int, default=5000)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--device", type=str,
@@ -63,7 +63,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--checkpoint-dir", type=str, default="checkpoints")
     p.add_argument("--resume-from", type=str, default=None,
                    help="Path to checkpoint to resume training from.")
-    p.add_argument("--wandb-project", type=str, default=None)
+    p.add_argument("--wandb-project", type=str, default="cs336-assignment-1")
     p.add_argument("--run-name", type=str, default=None)
 
     return p.parse_args()
@@ -125,7 +125,7 @@ if __name__ == "__main__":
         if i % args.eval_interval == 0:
             model.eval()
             losses = []
-            with torch.no_grad:
+            with torch.no_grad():
                 for j in range(args.eval_iters):
                     inputs, targets = get_batch(val_dataset, args.batch_size, args.context_length, args.device)
                     logits = model.forward(inputs)
