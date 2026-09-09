@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 # from example code
 def find_chunk_boundaries(
     file: BinaryIO,
-    desired_num_chunks: int,
+    chunk_size: int,
     split_special_tokens: list[bytes],
 ) -> list[int]:
     """
@@ -30,11 +30,9 @@ def find_chunk_boundaries(
     file_size = file.tell()
     file.seek(0)
 
-    chunk_size = file_size // desired_num_chunks
-
     # Initial guesses for chunk boundary locations, uniformly spaced
     # Chunks start on previous index, don't include last index
-    chunk_boundaries = [i * chunk_size for i in range(desired_num_chunks + 1)]
+    chunk_boundaries = [i for i in range(0, file_size, chunk_size)]
     chunk_boundaries[-1] = file_size
 
     mini_chunk_size = 4096  # Read ahead by 4k bytes at a time
@@ -84,8 +82,8 @@ def pretokenize(input_path, special_tokens: list[str]):
     special_tokens_bytes = [bytes(t, "utf-8") for t in special_tokens]
 
     with open(input_path, "rb") as f:
-        num_processes = 8
-        boundaries = find_chunk_boundaries(f, num_processes, special_tokens_bytes)
+        chunk_size = 128 * (1024 ** 2)
+        boundaries = find_chunk_boundaries(f, chunk_size, special_tokens_bytes)
 
     with multiprocessing.Pool() as pool:
         pretoken_counts_list = pool.starmap(count_pretokens, zip(

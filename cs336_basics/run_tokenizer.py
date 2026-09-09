@@ -1,33 +1,32 @@
 import array
 import pickle
 import logging
-import numpy as np
 
 from cs336_basics.tokenizer import Tokenizer
 from cs336_basics.tokenizer_v2 import train_bpe
 
 
-def train_tokenizer():
+def train_tokenizer(in_path, vocab_size, vocab_path, merges_path):
     vocab, merges = train_bpe(
-        input_path="data/TinyStoriesV2-GPT4-train.txt",
-        vocab_size=10000,
+        input_path=in_path,
+        vocab_size=vocab_size,
         special_tokens=["<|endoftext|>"],
         verbose=True,
     )
 
-    with open("data/TinyStories_tokenizer_vocab.pkl", "wb") as f:
+    with open(vocab_path, "wb") as f:
         pickle.dump(vocab, f)
-    with open("data/TinyStories_tokenizer_merges.pkl", "wb") as f:
+    with open(merges_path, "wb") as f:
         pickle.dump(merges, f)
 
 
-def sample_10():
+def sample_10(in_path, tokenizer):
     # Sample 10 documents (delimited by <|endoftext|>)
     SEP = "<|endoftext|>"
     n_docs = 10
     docs: list[str] = []
     buf = ""
-    with open("data/TinyStoriesV2-GPT4-train.txt", "r") as f:
+    with open(in_path, "r") as f:
         while len(docs) < n_docs:
             chunk = f.read(1 << 20)  # 1 MB
             if not chunk:
@@ -51,19 +50,11 @@ def sample_10():
     print(f"\nTOTAL: {total_bytes} bytes / {total_tokens} tokens = {overall:.3f} bytes/token")
 
 
-# temporary test code
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
-    tokenizer = Tokenizer.from_files(
-        vocab_filepath="data/TinyStories_tokenizer_vocab.pkl",
-        merges_filepath="data/TinyStories_tokenizer_merges.pkl",
-        special_tokens=["<|endoftext|>"],
-    )
+def tokenize(tokenizer: Tokenizer, in_path, out_path):
     assert len(tokenizer.vocab) <= 65536, "vocab too large for uint16"
     BATCH = 1_000_000  # tokens per flush (~2 MB at uint16)
     buf = array.array("H")  # unsigned short = uint16, native byte order
-    out_path = "data/TinyStories_encoded.bin"
-    with open("data/TinyStoriesV2-GPT4-train.txt", "r") as f, open(out_path, "wb") as out:
+    with open(in_path, "r") as f, open(out_path, "wb") as out:
         for tid in tokenizer.encode_iterable(f):
             buf.append(tid)
             if len(buf) >= BATCH:
@@ -72,3 +63,23 @@ if __name__ == "__main__":
         if buf:
             buf.tofile(out)
     # Load with: np.fromfile("data/TinyStories_encoded.bin", dtype=np.uint16)
+
+
+if __name__ == "__main__":
+    train_path = "data/owt_train.txt"
+    valid_path = "data/owt_valid.txt"
+    vocab_size = 32000
+    out_path = "data/owt_encoded_train.bin"
+    vocab_path = "data/owt_tokenizer_vocab.pkl"
+    merges_path = "data/owt_tokenizer_merges.pkl"
+
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    train_tokenizer(train_path, vocab_size, vocab_path, merges_path)
+
+    # tokenizer = Tokenizer.from_files(
+    #     vocab_filepath=vocab_path,
+    #     merges_filepath=merges_path,
+    #     special_tokens=["<|endoftext|>"],
+    # )
+    # sample_10(train_path, tokenizer)
+    # tokenize(valid_path, out_path, vocab_path, merges_path)
