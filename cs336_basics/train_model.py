@@ -51,7 +51,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--total-iters", type=int, default=5000)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--device", type=str,
-                   default="mps" if torch.mps.is_available() else "cpu")
+                   default="cuda" if torch.cuda.is_available() else "cpu")
     p.add_argument("--dtype", type=str, default="float32")
 
     # ---- eval / logging / checkpointing ----
