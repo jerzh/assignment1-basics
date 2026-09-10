@@ -165,6 +165,8 @@ class MultiHeadSelfAttention(nn.Module):
         k = rearrange(self.k_proj.forward(x), "... seq_len (num_heads d_k) -> ... num_heads seq_len d_k", num_heads=self.num_heads)
         v = rearrange(self.v_proj.forward(x), "... seq_len (num_heads d_v) -> ... num_heads seq_len d_v", num_heads=self.num_heads)
         if self.use_rope:
+            # Add num_heads dimension
+            token_positions = rearrange(token_positions, "... seq_len -> ... 1 seq_len")
             q = self.rope.forward(q, token_positions)
             k = self.rope.forward(k, token_positions)
         seq_len = q.shape[-2]
