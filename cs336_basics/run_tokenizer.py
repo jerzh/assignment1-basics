@@ -2,18 +2,22 @@ import argparse
 import array
 import pickle
 import logging
+import os
 
-from cs336_basics.tokenizer import Tokenizer
-from cs336_basics.tokenizer_v2 import train_bpe
+from cs336_basics.tokenizer import Tokenizer, train_bpe
+from cs336_basics.tokenizer_v2 import train_bpe_v2
 
 
-def train_tokenizer(in_path, vocab_size, vocab_path, merges_path):
-    vocab, merges = train_bpe(
+def train_tokenizer(in_path, vocab_size, vocab_path, merges_path, algorithm_version):
+    train_func = train_bpe if algorithm_version == "v1" else train_bpe_v2
+    vocab, merges = train_func(
         input_path=in_path,
         vocab_size=vocab_size,
         special_tokens=["<|endoftext|>"],
         verbose=True,
     )
+    if os.path.exists(vocab_path) or os.path.exists(merges_path):
+        raise FileExistsError("Tokenizer files already exist, do you want to overwrite?")
 
     with open(vocab_path, "wb") as f:
         pickle.dump(vocab, f)
@@ -70,11 +74,12 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser()
 
     # ---- data ----
+    p.add_argument("--mode", choices=["train", "sample", "tokenize"], default="sample")
     p.add_argument("--dataset-name", type=str, required=True)
     p.add_argument("--in-path", type=str, required=True)
     p.add_argument("--out-path", type=str, default="")
     p.add_argument("--vocab-size", type=int, default=10_000)
-    p.add_argument("--mode", choices=["train", "sample", "tokenize"], default="sample")
+    p.add_argument("--algorithm-version", choices=["v1", "v2"], default="v2")
     args = p.parse_args()
 
     vocab_path = f"data/{args.dataset_name}_tokenizer_vocab.pkl"
@@ -83,7 +88,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
     if args.mode == "train":
-        train_tokenizer(args.in_path, args.vocab_size, vocab_path, merges_path)
+        train_tokenizer(args.in_path, args.vocab_size, vocab_path, merges_path, args.algorithm_version)
     else:
         tokenizer = Tokenizer.from_files(
             vocab_filepath=vocab_path,

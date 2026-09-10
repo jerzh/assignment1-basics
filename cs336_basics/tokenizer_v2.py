@@ -1,21 +1,17 @@
 from __future__ import annotations
 
 import logging
-import multiprocessing
 import os
-import pickle
 import time
-import regex as re
 from collections import defaultdict, Counter
 from itertools import pairwise
-from typing import Iterator, BinaryIO
 
 from cs336_basics.tokenizer import pretokenize, apply_merge
 
 logger = logging.getLogger(__name__)
 
 
-def train_bpe(
+def train_bpe_v2(
     input_path: str | os.PathLike,
     vocab_size: int,
     special_tokens: list[str],

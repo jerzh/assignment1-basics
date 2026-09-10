@@ -33,7 +33,7 @@ def find_chunk_boundaries(
     # Initial guesses for chunk boundary locations, uniformly spaced
     # Chunks start on previous index, don't include last index
     chunk_boundaries = [i for i in range(0, file_size, chunk_size)]
-    chunk_boundaries[-1] = file_size
+    chunk_boundaries.append(file_size)
 
     mini_chunk_size = 4096  # Read ahead by 4k bytes at a time
 
