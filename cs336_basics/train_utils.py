@@ -50,7 +50,7 @@ def load_checkpoint(
     model: nn.Module,
     optimizer: torch.optim.Optimizer,
 ) -> int:
-    obj = torch.load(src, weights_only=False)
+    obj = torch.load(src, weights_only=True)
     model.load_state_dict(obj["model"])
     optimizer.load_state_dict(obj["optim"])
     return obj["iter"]
