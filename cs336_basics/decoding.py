@@ -47,8 +47,8 @@ if __name__ == "__main__":
     # ---- data ----
     p.add_argument("--model-path", type=str, required=True)
     p.add_argument("--prompt", type=str, required=True)
-    p.add_argument("--vocab-path", type=str, default="TinyStories_tokenizer_vocab.pkl")
-    p.add_argument("--merges-path", type=str, default="TinyStories_tokenizer_merges.pkl")
+    p.add_argument("--vocab-path", type=str, default="data/TinyStories_tokenizer_vocab.pkl")
+    p.add_argument("--merges-path", type=str, default="data/TinyStories_tokenizer_merges.pkl")
     p.add_argument("--max-tokens", type=int, default=256)
     p.add_argument("--temperature", type=float, default=1)
     p.add_argument("--top-p-threshold", type=float, default=1)
