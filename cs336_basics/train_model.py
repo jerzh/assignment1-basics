@@ -140,7 +140,8 @@ if __name__ == "__main__":
                 wandb.log({"val/loss": val_loss}, step=i)
             model.train()
 
-        if i % args.checkpoint_interval == 0:
+        # Also save the final model!
+        if i % args.checkpoint_interval == 0 or i == args.total_iters:
             os.makedirs(args.checkpoint_dir, exist_ok=True)
             save_checkpoint(model, optimizer, i, Path(args.checkpoint_dir) / f"{run_name}_iter{i}")
 

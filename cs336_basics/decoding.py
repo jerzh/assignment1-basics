@@ -72,6 +72,7 @@ if __name__ == "__main__":
         raise ValueError("Only f32 supported")
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
+    logging.info(f"Prompt: {args.prompt}")
     model = TransformerLM(
         vocab_size=args.vocab_size,
         context_length=args.context_length,
@@ -99,4 +100,4 @@ if __name__ == "__main__":
         top_p_threshold=args.top_p_threshold,
         device=args.device,
     )
-    print(completion)
+    logging.info(f"Completion: {completion}")
