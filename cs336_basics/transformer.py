@@ -8,7 +8,7 @@ from cs336_basics.modules import (
     Linear,
     MultiHeadSelfAttention,
     RMSNorm,
-    SwiGLU,
+    SiLU,
 )
 
 
@@ -31,7 +31,7 @@ class TransformerBlock(nn.Module):
         self.ln1 = RMSNorm(d_model, device=device, dtype=dtype)
         self.attn = MultiHeadSelfAttention(d_model, num_heads, max_seq_len, theta, use_rope=True, device=device, dtype=dtype)
         self.ln2 = RMSNorm(d_model, device=device, dtype=dtype)
-        self.ffn = SwiGLU(d_model, d_ff, device, dtype)
+        self.ffn = SiLU(d_model, d_ff, device, dtype)
 
     def forward(
         self,

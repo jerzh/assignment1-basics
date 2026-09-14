@@ -30,7 +30,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--d-model", type=int, default=512)
     p.add_argument("--num-layers", type=int, default=4)
     p.add_argument("--num-heads", type=int, default=16)
-    p.add_argument("--d-ff", type=int, default=1344)   # ~ (8/3) * d_model, rounded to multiple of 64
+    p.add_argument("--d-ff", type=int, default=2048)   # ~ (8/3) * d_model, rounded to multiple of 64
     p.add_argument("--rope-theta", type=float, default=10000.0)
 
     # ---- optimizer (AdamW) ----

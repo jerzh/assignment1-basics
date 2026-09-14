@@ -93,7 +93,7 @@ def run_swiglu(
     # swiglu.w1.weight.data = w1_weight
     # swiglu.w2.weight.data = w2_weight
     # swiglu.w3.weight.data = w3_weight
-    layer = SwiGLU(d_model, d_ff)
+    layer = SiLU(d_model, d_ff)
     layer.load_state_dict({
         "w1.weight": w1_weight,
         "w2.weight": w2_weight,
