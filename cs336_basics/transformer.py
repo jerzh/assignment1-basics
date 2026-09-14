@@ -29,7 +29,7 @@ class TransformerBlock(nn.Module):
         self.d_ff = d_ff
         # Spec state-dict keys (per adapter): ln1.weight, attn.*, ln2.weight, ffn.*
         self.ln1 = RMSNorm(d_model, device=device, dtype=dtype)
-        self.attn = MultiHeadSelfAttention(d_model, num_heads, max_seq_len, theta, use_rope=True, device=device, dtype=dtype)
+        self.attn = MultiHeadSelfAttention(d_model, num_heads, max_seq_len, theta, use_rope=False, device=device, dtype=dtype)
         self.ln2 = RMSNorm(d_model, device=device, dtype=dtype)
         self.ffn = SwiGLU(d_model, d_ff, device, dtype)
 
