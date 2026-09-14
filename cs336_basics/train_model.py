@@ -34,7 +34,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--rope-theta", type=float, default=10000.0)
 
     # ---- optimizer (AdamW) ----
-    p.add_argument("--lr", type=float, default=3e-4)
+    p.add_argument("--lr", type=float, default=3e-3)
     p.add_argument("--beta1", type=float, default=0.9)
     p.add_argument("--beta2", type=float, default=0.95)
     p.add_argument("--eps", type=float, default=1e-8)
@@ -44,12 +44,12 @@ def parse_args() -> argparse.Namespace:
     # ---- LR schedule (cosine w/ warmup) ----
     p.add_argument("--lr-min", type=float, default=3e-5)
     p.add_argument("--warmup-iters", type=int, default=200)
-    p.add_argument("--cosine-iters", type=int, default=5000,
+    p.add_argument("--cosine-iters", type=int, default=10000,
                    help="Iteration at which LR reaches lr_min; typically = total training iters.")
 
     # ---- training loop ----
-    p.add_argument("--batch-size", type=int, default=32)
-    p.add_argument("--total-iters", type=int, default=5000)
+    p.add_argument("--batch-size", type=int, default=128)
+    p.add_argument("--total-iters", type=int, default=10000)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--device", type=str,
                    default="cuda" if torch.cuda.is_available() else "cpu")
@@ -60,7 +60,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--eval-iters", type=int, default=50,
                    help="Number of val batches per eval.")
     p.add_argument("--log-interval", type=int, default=10)
-    p.add_argument("--checkpoint-interval", type=int, default=1000)
+    p.add_argument("--checkpoint-interval", type=int, default=2000)
     p.add_argument("--checkpoint-dir", type=str, default="checkpoints")
     p.add_argument("--resume-from", type=str, default=None,
                    help="Path to checkpoint to resume training from.")
