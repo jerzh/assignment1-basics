@@ -7,7 +7,6 @@ from cs336_basics.modules import (
     Embedding,
     Linear,
     MultiHeadSelfAttention,
-    RMSNorm,
     SwiGLU,
 )
 
@@ -28,9 +27,9 @@ class TransformerBlock(nn.Module):
         self.num_heads = num_heads
         self.d_ff = d_ff
         # Spec state-dict keys (per adapter): ln1.weight, attn.*, ln2.weight, ffn.*
-        self.ln1 = RMSNorm(d_model, device=device, dtype=dtype)
+        self.ln1 = nn.Identity()
         self.attn = MultiHeadSelfAttention(d_model, num_heads, max_seq_len, theta, use_rope=True, device=device, dtype=dtype)
-        self.ln2 = RMSNorm(d_model, device=device, dtype=dtype)
+        self.ln2 = nn.Identity()
         self.ffn = SwiGLU(d_model, d_ff, device, dtype)
 
     def forward(
@@ -69,7 +68,7 @@ class TransformerLM(nn.Module):
             TransformerBlock(d_model, num_heads, d_ff, context_length, rope_theta, device=device, dtype=dtype)
             for _ in range(num_layers)
         )
-        self.ln_final = RMSNorm(d_model, device=device, dtype=dtype)
+        self.ln_final = nn.Identity()
         self.lm_head = Linear(d_model, vocab_size, device=device, dtype=dtype)
 
     def forward(
