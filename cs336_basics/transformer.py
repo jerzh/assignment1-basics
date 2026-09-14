@@ -38,8 +38,8 @@ class TransformerBlock(nn.Module):
         x: torch.Tensor,                          # (..., seq_len, d_model)
         token_positions: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        x = x + self.attn.forward(self.ln1.forward(x), token_positions)
-        return x + self.ffn.forward(self.ln2.forward(x))
+        x = self.ln1.forward(x + self.attn.forward(x, token_positions))
+        return self.ln2.forward(x + self.ffn.forward(x))
 
 
 class TransformerLM(nn.Module):
