@@ -4,6 +4,13 @@ My implementation of a BPE tokenizer and Transformer language model from scratch
 
 The model is trained on TinyStories using RTX 4090s that I rented online (24-48GB RAM). Following the assignment, I tested some generations, did learning rate / batch size tuning, and ran some ablations. The assignment handout is [cs336_assignment1_basics.pdf](./cs336_assignment1_basics.pdf).
 
+Personal takeaways:
+1. debugging ML models is quite tricky. Claude is a godsend in this situation, it's able to check for simple mistakes that would have taken ages to debug pre-GPT -- but i wonder if it would work as well for truly novel research situations.
+2. there are many little tricks and parameters that have been set through years of experience, e.g. pre-norm, RoPE, SwiGLU, AdamW optimal parameters. the most essential one is pre-norm -- without it the model can barely even train
+3. tuning LR and batch size results in pretty obvious optima
+4. the generations i got from TinyStories were actually decent! model was good at grammar but struggled with narrative cohesion
+
+
 ## Installation
 
 Per original repo, datasets must be installed via `wget`:
